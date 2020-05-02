@@ -170,7 +170,7 @@ obd2ecu::obd2ecu(const char* name, canbus* can)
   m_starttime = time(NULL);
   LoadMap();
 
-  xTaskCreatePinnedToCore(OBD2ECU_task, "OVMS OBDII ECU", 6144, (void*)this, 5, &m_task, 1);
+  xTaskCreatePinnedToCore(OBD2ECU_task, "OVMS OBDII ECU", 6144, (void*)this, 5, &m_task, CORE(1));
 
   MyCan.RegisterListener(m_rxqueue);
   }
@@ -464,7 +464,7 @@ void obd2ecu::FillFrame(CAN_frame_t *frame,int reply,uint8_t pid,float data,uint
 
 void obd2ecu::IncomingFrame(CAN_frame_t* p_frame)
   {
-  CAN_frame_t r_frame;  /* build the response frame here */
+  CAN_frame_t r_frame = {};  /* build the response frame here */
   uint32_t reply;
   int jitter;
   uint8_t mapped_pid;

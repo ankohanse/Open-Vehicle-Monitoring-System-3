@@ -102,6 +102,21 @@ config OVMS_SYS_COMMAND_STACK_SIZE
     help
         The stack size of the OVMS Console and dynamic command tasks.
 
+config OVMS_LOGFILE_QUEUE_SIZE
+    int "Queue size for file logging"
+    default 100
+    depends on OVMS
+    help
+        The number of log messages that can be queued to the file logging task.
+        An entry needs 8 bytes of RAM.
+
+config OVMS_LOGFILE_TASK_PRIORITY
+    int "Task priority for file logging"
+    default 2
+    depends on OVMS
+    help
+        The RTOS priority for the file logging task ("OVMS FileLog").
+
 endmenu # System Options
 
 
@@ -149,6 +164,14 @@ config MG_ENABLE_DIRECTORY_LISTING
     depends on OVMS_SC_GPL_MONGOOSE
     help
         Enable MONGOOSE directory listing support
+
+config MG_ENABLE_SSL
+    bool "Enable MONGOOSE SSL/TSL support"
+    default n
+    depends on OVMS_SC_GPL_MONGOOSE
+    depends on MBEDTLS_PSK_MODES
+    help
+        Enable MONGOOSE SSL/TSL support
 
 config MG_ENABLE_DEBUG
     bool "Enable MONGOOSE debug logging"
@@ -247,6 +270,13 @@ config OVMS_VEHICLE_TESLAMODELS
     help
         Enable to include support for Tesla Model S vehicles.
 
+config OVMS_VEHICLE_TESLAMODEL3
+    bool "Include support for Tesla Model 3 vehicles"
+    default y
+    depends on OVMS
+    help
+        Enable to include support for Tesla Model 3 vehicles.
+
 config OVMS_VEHICLE_NISSANLEAF
     bool "Include support for Nissan Leaf vehicles"
     default y
@@ -334,6 +364,13 @@ config OVMS_VEHICLE_FIAT500
     help
         Enable to include support for FIAT 500 vehicle.
 
+config OVMS_VEHICLE_VWEUP
+    bool "Include support for VW e-Up vehicle"
+    default y
+    depends on OVMS
+    help
+        Enable to include support for VW e-Up vehicle.
+
 config OVMS_VEHICLE_RXTASK_STACK
     int "Stack size for vehicle RX task"
     default 6144
@@ -380,6 +417,16 @@ config OVMS_COMP_MAX7317
     help
         Enable to include support for MAX7317 GPIO expander.
 
+config OVMS_COMP_MAX7317_MONITOR_INTERVAL
+    int "MAX7317 port monitor default polling interval [ms]"
+    range 10 10000
+    default 50
+    depends on OVMS_COMP_MAX7317
+    help
+        The MAX7317 has no IRQ so needs to be polled to monitor port changes.
+        If enabled, the monitoring polls the ports with this interval by default.
+        The interval can be configured via param egpio[monitor.interval].
+
 config OVMS_COMP_ESP32CAN
     bool "Include support for ESP32 on-board CAN controller (can1)"
     default y
@@ -393,6 +440,13 @@ config OVMS_COMP_MCP2515
     depends on OVMS
     help
         Enable to include support for MCP2515 CAN controllers (can2, can3).
+
+config OVMS_COMP_EXTERNAL_SWCAN
+    bool "Include support for external SWCAN module (swcan bus)"
+    default n
+    depends on OVMS
+    help
+        Enable to include support for external SWCAN module. Replaces the second internal MCP2515 CAN controller
 
 config OVMS_COMP_ADC
     bool "Include support for ADC (reading 12V line voltage)"
@@ -470,6 +524,13 @@ config OVMS_COMP_SSH
     depends on OVMS_SC_GPL_MONGOOSE
     help
         Enable to include support for SSH server.
+
+config OVMS_COMP_PUSHOVER
+    bool "Include support for Pushover notification system"
+    default y
+    depends on MG_ENABLE_SSL
+    help
+        Enable to include support for Pushover. 
 
 config OVMS_COMP_MODEM_SIMCOM
     bool "Include support for SIMCOM modems"

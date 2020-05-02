@@ -2,6 +2,132 @@ Open Vehicle Monitor System v3 - Change log
 
 ????-??-?? ???  ???????  OTA release
 
+2020-04-22 MWJ  3.2.012 OTA release
+- #357 tpms rear left temperature incorrect in v2 protocol
+- #354 Flush UART buffer when power cycling modem
+- General stability improvements to CAN logging and playback
+
+2020-04-03 MWJ  3.2.011 OTA release
+- #327 Tesla Roadster: Vehicle AWAKE metric not correct
+- #311 OvmsEvents::ScheduleEvent with delay_ms < 10
+- #333 Support for SSL/TLS Trusted Certificate Authorities
+- #334 Support for SSL/TLS MQTT connections in Server v3
+- #335 Support for SSL/TLS MQTT connections in Server v2
+- #338 SSL/TLS maximum segment size forced to 2048 bytes
+- #341 Support paranoid mode in server v2
+- #343 TPMS message has no -1 setting for "disable" in ovms_server_v2.cpp
+- #342 OTA updates available (when not on wifi)
+- #351 Tesla Model S: Spurious vehicle idle alerts after vehicle firmware update
+
+2020-02-03 MWJ  3.2.010 OTA release
+- EGPIO: address multiple ports by input & output command
+- SmartED: issue #293 fixed
+  change savestatus from store to sd
+  Add ecoscore system to drive report and web interface like defunct smart web app. (added by frantek)
+- New command: "vfs df" -- show disk usage
+- Scripting API: added VFS.Load() & VFS.Save()
+- Scripting API: renamed HTTP.request() to HTTP.Request() for API consistency
+- Scripting API: added OvmsMetrics.GetValues()
+- Web UI: editor extended by embedded Javascript evaluation
+- Webserver: /api/execute: support for Javascript evaluation
+- Scripting API: added OvmsConfig.GetValues() & OvmsConfig.SetValues()
+- Config: added dedicated "usr" param for plugin configurations
+- Scripting API: HTTP.request() added
+- SmartED: add BMS diagnose report
+  New commands:
+    xse rptdata     get a Battery Status Report
+    xse bmsdiag     get Battery Diagnose Report
+- #225 Fix charge duration display in iOS App
+- #228 AutoFlashSD cleanup ovms3.done before rename
+- #293 Event queue overflow on startup
+- #299 Fix Tesla Roadster vehicle type for 2012 cars
+- #328 Tesla Roadster: Vehicle AWAKE metric not correct
+
+2019-12-13 MWJ  3.2.008  OTA release
+- Add support for 8MB PSRAM (in addition to current 4MB support)
+- Improvements to CAN driver, relating to obd2hud
+- Nissan Leaf: 40kWh option
+
+2019-12-09 MWJ  3.2.007  OTA release
+- Minor change to web sheel (to decode line breaks in log messages)
+- Javascript: Conduct garbage collection per minute, to reduce memory consumption
+
+2019-11-30 MWJ  3.2.006  OTA release
+- 12V Monitor: web UI calibration aid & configuration
+- EGPIO/MAX7317: port input monitoring, metrics, events, documentation
+  New commands:
+    egpio status                    Show input, output & monitoring port status
+    egpio monitor status            Show input monitoring status
+    egpio monitor <on|off> [ports]  Enable/disable port monitoring
+  New configs:
+    [auto] egpio                    yes = Autostart port monitoring (default no)
+    [egpio] monitor.ports           Default ports to monitor (space separated)
+    [egpio] monitor.interval        Polling interval in ms (default 50)
+  New metrics:
+    m.egpio.input                   EGPIO input port state (ports 0…9, present=high)
+    m.egpio.monitor                 EGPIO input monitoring ports
+    m.egpio.output                  EGPIO output port state
+  New events:
+    egpio.input.<port>.<state>      EGPIO input port change (port=0…9, state=high/low)
+    egpio.output.<port>.<state>     EGPIO output port change (port=0…9, state=high/low)
+- Scripting API: OvmsMetrics.AsJSON() added
+- Renault Zoe: basic Metrics and charging status added, trip notify, web config for battery capacity
+- Logging: file logging moved to dedicated task (improved performance)
+  New commands:
+    log status      Show logging status
+    log open        (Re-)open currently set log file after "log close"
+- Web UI: log monitoring via web shell
+  Note: command "log monitor" doesn't apply, use the checkbox to disable.
+- Factory reset from web/remote shell by "module factory reset -noconfirm"
+- SWCAN: Support for add-on SWCAN module (see https://github.com/mjuhanne/OVMS-SWCAN)
+    Add new "can4" bus (if compiled in)
+    SWCAN leds (board and/or dongle):
+      - Status led shows network connectivity
+      - TX/RX led for SWCAN traffic
+- MCP2515: Additional debugging commands
+  New commands:
+    viewregisters   Show MCP2515 register info
+    writeregister   Write MCP2515 registers
+- Volt/Ampera: Major update
+  Add web config interface
+  Support for SWCAN module and SWCAN messages
+  Read following metrics:
+    CAN1: engine on, motor rpm, odometer, speed, throttle, footbrake, gear
+    SWCAN: Lock status, alarm status, fob button functions, tire pressure
+    SWCAN: Ambient temperature, cabin temperature, AC front blower fan speed, coolant temperature, coolant heater power
+    SWCAN: Configured charging current limit
+  Proper event handling for charging started/stopped and alarm
+  SWCAN High Voltage Wake Up functionality (requires separate SWCAN add-on module)
+    - Interior light blinked after the wake up sequence
+  Add following features (which all depend on SWCAN Wake Up):
+    Mimic Onstar functionality: Door lock/unlock, Preheating
+    Preheating (BCM overriding mode) for those cars that don't seem to respond to Onstar message
+      - configurable maximum preheat time
+    Set charging current limit
+- Pushover: New Pushover notification framework support
+  Configurable via Config/Notification web page
+- SIMCOM: Allow user to set custom SIM PIN code
+- Metrics: 'metric list -s' shows metric age and staleness
+- Twizy: send custom OBD2 requests, output response as hex dump
+  New command:
+    xrt obd request cluster|bms|charger|broadcast <request>
+    xrt obd request device <txid> <rxid> <request>
+  Note: request types need to be supported by the poller, i.e.
+    currently only 8/16 bit PID requests with mode 01, 02, 09, 10, 1A, 21 or 22
+- Scripting: new Javascript APIs:
+    - OvmsEvents.Raise(event, [delay_ms])
+    - id = OvmsNotify.Raise(type, subtype, message)
+- Twizy: immediate tuning metrics updates (was delegated to ticker before),
+  remember profile key loaded into working set, remember tuning applied state
+  New metrics:
+    xrt.cfg.applied   -- yes = tuning has been applied to SEVCON
+    xrt.cfg.ws        -- tuning profile loaded into working set
+- Powermgmt: New automatic power management module
+  Configuration via Web UI
+  Switch off SIMCOM and WiFi after certain (configurable) time period of idling/non-charging of 12V battery has lapsed.
+  Turn on previously switched off modules if 12V charging is initiated.
+  If 12V battery alert is received, shut down all the modules and OVMS after certain configurable grace period (default 30 minutes)
+
 2019-09-19 MWJ  3.2.005  OTA release
 - Default module/debug.tasks to FALSE
   Users that volunteer to submit tasks debug historical data to the Open Vehicles

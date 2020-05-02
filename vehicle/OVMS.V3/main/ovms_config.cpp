@@ -247,6 +247,7 @@ OvmsConfig::OvmsConfig()
 
   RegisterParam("password", "Password store", true, false);
   RegisterParam("module", "Module configuration", true, true);
+  RegisterParam("usr", "Custom plugin configuration", true, true);
   }
 
 OvmsConfig::~OvmsConfig()
@@ -567,6 +568,7 @@ static struct
     { "obd2ecu", true },
     { "dbc", true },
     { "plugin", true },
+    { "trustedca", true },
     { NULL, false }
   };
 

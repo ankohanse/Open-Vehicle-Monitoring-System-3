@@ -74,6 +74,8 @@ void HousekeepingUpdate12V()
   OvmsMetricFloat* m1 = StandardMetrics.ms_v_bat_12v_voltage;
   if (m1 == NULL)
     return;
+  if (MyPeripherals == NULL)
+    return;
 
   // Allow the user to adjust the ADC conversion factor
   float f = MyConfig.GetParamValueFloat("system.adc","factor12v");
@@ -167,6 +169,11 @@ void Housekeeping::Init(std::string event, void* data)
     }
   else
     {
+#ifdef CONFIG_OVMS_COMP_MAX7317
+    ESP_LOGI(TAG, "Auto init max7317 (free: %zu bytes)", heap_caps_get_free_size(MALLOC_CAP_8BIT|MALLOC_CAP_INTERNAL));
+    MyPeripherals->m_max7317->AutoInit();
+#endif // #ifdef CONFIG_OVMS_COMP_MAX7317
+
 #ifdef CONFIG_OVMS_COMP_EXT12V
     ESP_LOGI(TAG, "Auto init ext12v (free: %zu bytes)", heap_caps_get_free_size(MALLOC_CAP_8BIT|MALLOC_CAP_INTERNAL));
     MyPeripherals->m_ext12v->AutoInit();

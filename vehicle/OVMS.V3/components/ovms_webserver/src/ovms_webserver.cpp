@@ -116,6 +116,9 @@ OvmsWebServer::OvmsWebServer()
   RegisterPage("/cfg/server/v3", "Server V3 (MQTT)", HandleCfgServerV3, PageMenu_Config, PageAuth_Cookie);
 #endif
 #endif
+#ifdef CONFIG_OVMS_COMP_PUSHOVER
+  RegisterPage("/cfg/notification", "Notification", HandleCfgNotification, PageMenu_Config, PageAuth_Cookie);
+#endif
   RegisterPage("/cfg/webserver", "Webserver", HandleCfgWebServer, PageMenu_Config, PageAuth_Cookie);
   RegisterPage("/cfg/plugins", "Web Plugins", HandleCfgPlugins, PageMenu_Config, PageAuth_Cookie);
   RegisterPage("/cfg/autostart", "Autostart", HandleCfgAutoInit, PageMenu_Config, PageAuth_Cookie);
@@ -147,6 +150,7 @@ void OvmsWebServer::NetManInit(std::string event, void* data)
 
   char *error_string;
   struct mg_bind_opts bind_opts = {};
+  memset(&bind_opts, 0, sizeof(bind_opts));
   bind_opts.error_string = (const char**) &error_string;
   struct mg_connection *nc = mg_bind_opt(mgr, ":80", EventHandler, bind_opts);
   if (!nc)
@@ -292,17 +296,8 @@ const std::string OvmsWebServer::MakeDigestAuth(const char* realm, const char* u
  */
 const std::string OvmsWebServer::ExecuteCommand(const std::string command, int verbosity /*=COMMAND_RESULT_NORMAL*/)
 {
-  std::string output;
-  BufferedShell* bs = new BufferedShell(false, verbosity);
-  if (!bs)
-    return output;
-  bs->SetSecure(true); // Note: assuming user is admin
-  output = "";
-  bs->ProcessChars(command.data(), command.size());
-  bs->ProcessChar('\n');
-  bs->Dump(output);
-  delete bs;
-  return output;
+  // Note: assuming user is admin (secure=true)
+  return BufferedShell::ExecuteCommand(command, true, verbosity);
 }
 
 
@@ -1010,6 +1005,7 @@ void OvmsWebServer::HandleLogin(PageEntry_t& p, PageContext_t& c)
   c.input_password("Password", "password", "", NULL, NULL, "autocomplete=\"section-login current-password\"");
   c.input_button("default", "Login");
   c.form_end();
+  c.print("<script>$('#input-username').focus()</script>");
   c.panel_end();
   c.done();
 }

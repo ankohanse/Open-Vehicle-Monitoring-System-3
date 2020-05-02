@@ -33,6 +33,7 @@
 
 #include "gsmpppos.h"
 #include "gsmnmea.h"
+#include "ovms.h"
 #include "pcp.h"
 #include "ovms_events.h"
 #include "gsmmux.h"
@@ -62,7 +63,7 @@ class simcom : public pcp, public InternalRamAllocated
 
   protected:
     TaskHandle_t m_task;
-    QueueHandle_t m_queue;
+    volatile QueueHandle_t m_queue;
     uart_port_t m_uartnum;
     int m_baud;
     int m_rxpin;
@@ -91,7 +92,8 @@ class simcom : public pcp, public InternalRamAllocated
       };
     typedef enum
       {
-      SETSTATE = UART_EVENT_MAX+1000
+      SETSTATE = UART_EVENT_MAX+1000,
+      SHUTDOWN
       } event_type_t;
     typedef enum
       {
@@ -131,6 +133,9 @@ class simcom : public pcp, public InternalRamAllocated
     GsmNMEA      m_nmea;
     int          m_line_unfinished;
     std::string  m_line_buffer;
+    bool         m_pincode_required;
+    int          m_err_fifo_ovf;
+    int          m_err_buffer_full;
 
   protected:
     void SetState1(SimcomState1 newstate);

@@ -37,6 +37,7 @@ static const char *TAG = "simcom";
 #include "metrics_standard.h"
 #include "ovms_config.h"
 #include "ovms_events.h"
+#include "ovms_notify.h"
 #include "ovms_boot.h"
 
 const char* SimcomState1Name(simcom::SimcomState1 state)
@@ -84,8 +85,25 @@ static void SIMCOM_task(void *pvParameters)
 void simcom::Task()
   {
   SimcomOrUartEvent event;
+  uint8_t data[128];
 
-  for(;;)
+  // Init UART:
+  uart_config_t uart_config =
+    {
+    .baud_rate = m_baud,
+    .data_bits = UART_DATA_8_BITS,
+    .parity = UART_PARITY_DISABLE,
+    .stop_bits = UART_STOP_BITS_1,
+    .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+    .rx_flow_ctrl_thresh = 122,
+    .use_ref_tick = 0,
+    };
+  uart_param_config(m_uartnum, &uart_config);
+  uart_set_pin(m_uartnum, m_txpin, m_rxpin, 0, 0);
+  uart_driver_install(m_uartnum, SIMCOM_BUF_SIZE*2, SIMCOM_BUF_SIZE*2, 50, (QueueHandle_t*)&m_queue, ESP_INTR_FLAG_LEVEL2);
+
+  // Queue processing loop:
+  while (m_task)
     {
     if (xQueueReceive(m_queue, (void *)&event, (portTickType)portMAX_DELAY))
       {
@@ -99,11 +117,11 @@ void simcom::Task()
             size_t buffered_size = event.uart.size;
             while (buffered_size > 0)
               {
-              uint8_t data[16];
-              if (buffered_size>16) buffered_size = 16;
+              if (buffered_size>sizeof(data)) buffered_size = sizeof(data);
               int len = uart_read_bytes(m_uartnum, (uint8_t*)data, buffered_size, 100 / portTICK_RATE_MS);
               m_buffer.Push(data,len);
-              MyCommandApp.HexDump(TAG, "rx", (const char*)data, len);
+              if (m_state1 == NetDeepSleep)
+                { MyCommandApp.HexDump(TAG, "rx", (const char*)data, len); }
               uart_get_buffered_data_len(m_uartnum, &buffered_size);
               SimcomState1 newstate = State1Activity();
               if ((newstate != m_state1)&&(newstate != None)) SetState1(newstate);
@@ -112,15 +130,28 @@ void simcom::Task()
             break;
           case UART_FIFO_OVF:
             uart_flush(m_uartnum);
+            m_err_fifo_ovf++;
+            ESP_LOGW(TAG, "UART hw fifo overflow");
             break;
           case UART_BUFFER_FULL:
             uart_flush(m_uartnum);
+            m_err_buffer_full++;
+            ESP_LOGW(TAG, "UART ring buffer full");
             break;
           case UART_BREAK:
+            ESP_LOGD(TAG, "UART rx break");
+            break;
           case UART_PARITY_ERR:
+            ESP_LOGW(TAG, "UART parity check error");
+            break;
           case UART_FRAME_ERR:
+            ESP_LOGW(TAG, "UART frame error");
+            break;
           case UART_PATTERN_DET:
+            ESP_LOGD(TAG, "UART pattern detected");
+            break;
           default:
+            ESP_LOGD(TAG, "UART unknown event type: %d", event.uart.type);
             break;
           }
         }
@@ -132,12 +163,20 @@ void simcom::Task()
           case SETSTATE:
             SetState1(event.simcom.data.newstate);
             break;
+          case SHUTDOWN:
+            m_task = 0;
+            break;
           default:
             break;
           }
         }
       }
     }
+
+  // Shutdown:
+  uart_driver_delete(m_uartnum);
+  m_queue = 0;
+  vTaskDelete(NULL);
   }
 
 simcom::simcom(const char* name, uart_port_t uartnum, int baud, int rxpin, int txpin, int pwregpio, int dtregpio)
@@ -161,6 +200,10 @@ simcom::simcom(const char* name, uart_port_t uartnum, int baud, int rxpin, int t
   m_powermode = Off;
   m_line_unfinished = -1;
   m_line_buffer.clear();
+  m_pincode_required = false;
+  m_err_fifo_ovf = 0;
+  m_err_buffer_full = 0;
+
   StartTask();
 
   using std::placeholders::_1;
@@ -193,6 +236,12 @@ void simcom::SupportSummary(OvmsWriter* writer)
   {
   writer->puts("\nSIMCOM Modem Status");
 
+  if (m_pincode_required)
+    {
+    writer->printf("SIM card PIN code required.\n");
+    if (MyConfig.GetParamValueBool("modem","wrongpincode"))
+      writer->printf("Wrong PIN (%s) entered!\n", MyConfig.GetParamValue("modem","pincode").c_str());
+    }
   writer->printf("  Network Registration: %s\n  Provider: %s\n  Signal: %d dBm\n  State: %s\n",
     SimcomNetRegName(m_netreg),
     m_provider.c_str(),
@@ -202,6 +251,11 @@ void simcom::SupportSummary(OvmsWriter* writer)
   writer->printf("    Ticker: %d\n    User Data: %d\n",
     m_state1_ticker,
     m_state1_userdata);
+  writer->printf(
+    "    HW FIFO overflows: %d\n"
+    "    Buffer overflows: %d\n"
+    , m_err_fifo_ovf
+    , m_err_buffer_full);
 
   if (m_state1_timeout_goto != None)
     {
@@ -255,26 +309,7 @@ void simcom::StartTask()
   {
   if (!m_task)
     {
-    uart_config_t uart_config =
-      {
-      .baud_rate = m_baud,
-      .data_bits = UART_DATA_8_BITS,
-      .parity = UART_PARITY_DISABLE,
-      .stop_bits = UART_STOP_BITS_1,
-      .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-      .rx_flow_ctrl_thresh = 122,
-      .use_ref_tick = 0,
-      };
-    // Set UART parameters
-    uart_param_config(m_uartnum, &uart_config);
-
-    // Install UART driver, and get the queue.
-    uart_driver_install(m_uartnum, SIMCOM_BUF_SIZE * 2, SIMCOM_BUF_SIZE * 2, 10, &m_queue, 0);
-
-    // Set UART pins
-    uart_set_pin(m_uartnum, m_txpin, m_rxpin, 0, 0);
-
-    xTaskCreatePinnedToCore(SIMCOM_task, "OVMS SIMCOM", 4096, (void*)this, 5, &m_task, 1);
+    xTaskCreatePinnedToCore(SIMCOM_task, "OVMS SIMCOM", 4*1024, (void*)this, 20, &m_task, CORE(0));
     }
   }
 
@@ -282,9 +317,11 @@ void simcom::StopTask()
   {
   if (m_task)
     {
-    uart_driver_delete(m_uartnum);
-    vTaskDelete(m_task);
-    m_task = 0;
+    SimcomOrUartEvent ev;
+    ev.simcom.type = SHUTDOWN;
+    xQueueSend(m_queue, &ev, portMAX_DELAY);
+    while (m_queue)
+      vTaskDelay(pdMS_TO_TICKS(10));
     }
   }
 
@@ -635,7 +672,7 @@ simcom::SimcomState1 simcom::State1Ticker1()
       switch (m_state1_ticker)
         {
         case 10:
-          tx("AT+CPIN?;+CREG=1;+CTZU=1;+CTZR=1;+CLIP=1;+CMGF=1;+CNMI=1,2,0,0,0;+CSDH=1;+CMEE=2;+CSQ;+AUTOCSQ=1,1;E0\r\n");
+          tx("AT+CPIN?;+CREG=1;+CTZU=1;+CTZR=1;+CLIP=1;+CMGF=1;+CNMI=1,2,0,0,0;+CSDH=1;+CMEE=2;+CSQ;+AUTOCSQ=1,1;E0;S0=0\r\n");
           break;
         case 12:
           tx("AT+CGMR;+ICCID\r\n");
@@ -903,6 +940,42 @@ void simcom::StandardLineHandler(int channel, OvmsBuffer* buf, std::string line)
       ESP_LOGI(TAG,"SMS length is %d",(int)buf->m_userdata);
       }
     }
+  // SIM card PIN code required:
+  else if (line.compare(0, 14, "+CPIN: SIM PIN") == 0)
+    {
+    ESP_LOGI(TAG,"SIM card PIN code required");
+    m_pincode_required=true;
+    std::string pincode = MyConfig.GetParamValue("modem", "pincode");
+    if (!MyConfig.GetParamValueBool("modem","wrongpincode"))
+      {
+      if (pincode != "")
+        {
+        ESP_LOGI(TAG,"Using PIN code \"%s\"",pincode.c_str());
+        std::string at = "AT+CPIN=\"";
+        at.append(pincode);
+        at.append("\"\r\n");
+        tx(at.c_str());
+        }
+      else
+        {
+        ESP_LOGE(TAG,"SIM card PIN code not set!");
+        MyEvents.SignalEvent("system.modem.pincode_not_set", NULL);
+        MyNotify.NotifyString("alert", "modem.no_pincode", "No PIN code for SIM card configured!");
+        }
+      } else
+      {
+      ESP_LOGW(TAG,"Wrong PIN code (%s) previously entered.. Will not re-enter until changed!", pincode.c_str());
+      MyNotify.NotifyStringf("alert", "modem.wrongpincode", "Wrong pin code (%s) previously entered! Did not re-enter it..",pincode.c_str());
+      }
+    }
+  else if (line.compare(0, 30, "+CME ERROR: incorrect password") == 0)
+    {
+    ESP_LOGE(TAG,"Wrong PIN code entered!");
+    MyEvents.SignalEvent("system.modem.wrongpingcode", NULL);
+    MyNotify.NotifyStringf("alert", "modem.wrongpincode", "Wrong pin code (%s) entered!", MyConfig.GetParamValue("modem", "pincode"));
+    MyConfig.SetParamValueBool("modem","wrongpincode",true);
+    }
+
   // MMI/USSD response (URC):
   //  sent on all free channels, so we only process GSM_MUX_CHAN_CMD
   else if (channel == GSM_MUX_CHAN_CMD && line.compare(0, 7, "+CUSD: ") == 0)
@@ -936,6 +1009,7 @@ void simcom::StandardLineHandler(int channel, OvmsBuffer* buf, std::string line)
 void simcom::PowerCycle()
   {
   ESP_LOGI(TAG, "Power Cycle");
+  uart_flush(m_uartnum); // Flush the ring buffer, to try to address MUX start issues
 #ifdef CONFIG_OVMS_COMP_MAX7317
   MyPeripherals->m_max7317->Output(MODEM_EGPIO_PWR, 0); // Modem EN/PWR line low
   MyPeripherals->m_max7317->Output(MODEM_EGPIO_PWR, 1); // Modem EN/PWR line high
@@ -1067,6 +1141,12 @@ void simcom_status(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc
   {
   bool debug = (strcmp(cmd->GetName(), "debug") == 0);
 
+  if (MyPeripherals->m_simcom->m_pincode_required)
+    {
+    writer->printf("SIM card PIN code required.\n");
+    if (MyConfig.GetParamValueBool("modem","wrongpincode"))
+      writer->printf("Wrong PIN (%s) entered!\n", MyConfig.GetParamValue("modem","pincode").c_str());
+    }
   writer->printf("Network Registration: %s\nProvider: %s\nSignal: %d dBm\n\nState: %s\n",
     SimcomNetRegName(MyPeripherals->m_simcom->m_netreg),
     MyPeripherals->m_simcom->m_provider.c_str(),
@@ -1078,6 +1158,11 @@ void simcom_status(int verbosity, OvmsWriter* writer, OvmsCommand* cmd, int argc
     writer->printf("  Ticker: %d\n  User Data: %d\n",
       MyPeripherals->m_simcom->m_state1_ticker,
       MyPeripherals->m_simcom->m_state1_userdata);
+    writer->printf(
+      "  HW FIFO overflows: %d\n"
+      "  Buffer overflows: %d\n"
+      , MyPeripherals->m_simcom->m_err_fifo_ovf
+      , MyPeripherals->m_simcom->m_err_buffer_full);
 
     if (MyPeripherals->m_simcom->m_state1_timeout_goto != simcom::None)
       {
